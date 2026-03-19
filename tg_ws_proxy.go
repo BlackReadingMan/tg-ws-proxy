@@ -24,11 +24,12 @@ import (
 const (
 	defaultPort    = 1080
 	tcpNoDelay     = true
-	recvBuf        = 65536
-	sendBuf        = 65536
+	recvBuf        = 256 * 1024
+	sendBuf        = 256 * 1024
 	wsPoolSize     = 4
 	wsPoolMaxAge   = 120.0 // seconds
-	dcFailCooldown = 60.0  // seconds
+	dcFailCooldown = 30.0  // seconds
+	wsFailTimeout  = 2.0
 )
 
 var tgRanges = []struct {
@@ -47,12 +48,15 @@ var ipToDC = map[string]struct {
 }{
 	"149.154.175.50": {1, false}, "149.154.175.51": {1, false},
 	"149.154.175.53": {1, false}, "149.154.175.54": {1, false},
-	"149.154.175.52": {1, true},
-	"149.154.167.41": {2, false}, "149.154.167.50": {2, false},
+	"149.154.175.211": {1, false},
+	"149.154.175.52":  {1, true},
+	"149.154.167.35":  {2, false},
+	"149.154.167.41":  {2, false}, "149.154.167.50": {2, false},
 	"149.154.167.51": {2, false}, "149.154.167.220": {2, false},
 	"95.161.76.100":   {2, false},
 	"149.154.167.151": {2, true}, "149.154.167.222": {2, true},
-	"149.154.167.223": {2, true}, "149.154.162.123": {2, true},
+	"149.154.167.223": {2, true}, "149.154.167.255": {4, false},
+	"149.154.162.123": {2, true},
 	"149.154.175.100": {3, false}, "149.154.175.101": {3, false},
 	"149.154.175.102": {3, true},
 	"149.154.167.91":  {4, false}, "149.154.167.92": {4, false},
@@ -61,9 +65,15 @@ var ipToDC = map[string]struct {
 	"149.154.165.111": {4, true},
 	"91.108.56.100":   {5, false}, "91.108.56.101": {5, false},
 	"91.108.56.116": {5, false}, "91.108.56.126": {5, false},
-	"149.154.171.5": {5, false},
-	"91.108.56.102": {5, true}, "91.108.56.128": {5, true},
-	"91.108.56.151": {5, true},
+	"149.154.171.5":   {5, false},
+	"149.154.171.255": {5, false},
+	"91.108.56.102":   {5, true}, "91.108.56.128": {5, true},
+	"91.108.56.151":  {5, true},
+	"91.105.192.100": {203, false},
+}
+
+var dcOverrides = map[int]int{
+	203: 2,
 }
 
 var dcOpt map[int]string // DC -> target IP
@@ -148,7 +158,7 @@ func dcFromInit(data []byte) (dc int, isMedia bool, ok bool) {
 			dc = -dc
 			isMedia = true
 		}
-		if dc >= 1 && dc <= 5 {
+		if (dc >= 1 && dc <= 5) || dc == 203 {
 			return dc, isMedia, true
 		}
 	}
@@ -175,6 +185,9 @@ func patchInitDc(data []byte, dc int) []byte {
 }
 
 func wsDomains(dc int, isMedia bool) []string {
+	if override, ok := dcOverrides[dc]; ok {
+		dc = override
+	}
 	if isMedia {
 		return []string{fmt.Sprintf("kws%d-1.web.telegram.org", dc), fmt.Sprintf("kws%d.web.telegram.org", dc)}
 	}
@@ -336,7 +349,7 @@ func (p *wsPool) refill(key [2]int, targetIP string, domains []string) {
 	for i := 0; i < needed; i++ {
 		go func() {
 			defer wg.Done()
-			conn, err := connectOne(targetIP, domains)
+			conn, err := connectOne(targetIP, domains, 8*time.Second)
 			if err != nil {
 				return
 			}
@@ -349,18 +362,16 @@ func (p *wsPool) refill(key [2]int, targetIP string, domains []string) {
 	log.Printf("WS pool refilled DC%d%s: %d ready", dc, mediaSuffix(isMedia), len(p.idle[key]))
 }
 
-func connectOne(targetIP string, domains []string) (*websocket.Conn, error) {
+func connectOne(targetIP string, domains []string, timeout time.Duration) (*websocket.Conn, error) {
 	for _, domain := range domains {
 		dialer := &websocket.Dialer{
 			TLSClientConfig: &tls.Config{
-				ServerName: domain, // проверяем сертификат для этого домена
-				// InsecureSkipVerify: false, // по умолчанию false, можно не указывать
+				ServerName: domain,
 			},
 			NetDialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				// Принудительно подключаемся к заданному IP, игнорируя DNS
 				return (&net.Dialer{}).DialContext(ctx, network, targetIP+":443")
 			},
-			HandshakeTimeout: 8 * time.Second,
+			HandshakeTimeout: timeout,
 		}
 		header := make(http.Header)
 		header.Set("Origin", "https://web.telegram.org")
@@ -691,16 +702,13 @@ func handleClient(conn net.Conn) {
 	}
 
 	// Cooldown check
+	timeout := 10 * time.Second
 	dcFailUntil.RLock()
 	failUntil, exists := dcFailUntil.m[key]
 	dcFailUntil.RUnlock()
 	if exists && now.Before(failUntil) {
-		remaining := failUntil.Sub(now).Seconds()
-		log.Printf("[%s] DC%d%s WS cooldown (%.0fs) -> TCP", label, dc, mediaSuffix(isMedia), remaining)
-		if tcpFallback(context.Background(), conn, dstAddr, dstPort, init, label, dc, isMedia) {
-			log.Printf("[%s] DC%d%s TCP fallback closed", label, dc, mediaSuffix(isMedia))
-		}
-		return
+		timeout = wsFailTimeout * time.Second
+		log.Printf("[%s] DC%d%s WS cooldown active, using timeout %.0fs", label, dc, mediaSuffix(isMedia), timeout.Seconds())
 	}
 
 	// Try WebSocket
@@ -710,7 +718,7 @@ func handleClient(conn net.Conn) {
 	if wsConn == nil {
 		// No pool hit, try to connect directly
 		var err error
-		wsConn, err = connectOne(targetIP, domains)
+		wsConn, err = connectOne(targetIP, domains, timeout)
 		if err != nil {
 			atomic.AddInt64(&stats.wsErrors, 1)
 			dcFailUntil.Lock()
