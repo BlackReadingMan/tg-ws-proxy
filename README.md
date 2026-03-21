@@ -34,7 +34,7 @@ go build -o tg_ws_proxy.exe
 ### Консольный режим
 
 ```bash
-tg_ws_proxy.exe [--host HOST] [--port PORT] [--dc-ip DC:IP,DC:IP...] [-v]
+tg_ws_proxy.exe [--host HOST] [--port PORT] [--dc-ip DC:IP,DC:IP...]
 ```
 
 **Аргументы:**
