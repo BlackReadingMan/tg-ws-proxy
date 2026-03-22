@@ -13,9 +13,11 @@ import (
 
 func main() {
 	var (
-		port  = flag.Int("port", defaultPort, "listen port")
-		host  = flag.String("host", "127.0.0.1", "listen host")
-		dcIps = flag.String("dc-ip", "", "comma-separated DC:IP pairs, e.g. 2:149.154.167.220,4:149.154.167.220")
+		port     = flag.Int("port", defaultPort, "listen port")
+		host     = flag.String("host", "127.0.0.1", "listen host")
+		dcIps    = flag.String("dc-ip", "", "comma-separated DC:IP pairs, e.g. 2:149.154.167.220,4:149.154.167.220")
+		bufKB    = flag.Int("buf-kb", 256, "socket send/recv buffer size in KB")
+		poolSize = flag.Int("pool-size", 4, "WS connection pool size per DC")
 	)
 	flag.Parse()
 
@@ -43,6 +45,10 @@ func main() {
 	}
 
 	log.SetFlags(log.Ltime | log.Lmicroseconds)
+
+	recvBuf = *bufKB * 1024
+	sendBuf = recvBuf
+	wsPoolSize = *poolSize
 
 	// start server
 	ln, err := net.Listen("tcp", net.JoinHostPort(*host, strconv.Itoa(*port)))

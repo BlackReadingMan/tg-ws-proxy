@@ -8,12 +8,15 @@ import (
 const (
 	defaultPort    = 1080
 	tcpNoDelay     = true
-	recvBuf        = 256 * 1024
-	sendBuf        = 256 * 1024
-	wsPoolSize     = 4
 	wsPoolMaxAge   = 120.0 // seconds
 	dcFailCooldown = 30.0  // seconds
 	wsFailTimeout  = 2.0   // seconds
+)
+
+var (
+	recvBuf    = 256 * 1024
+	sendBuf    = 256 * 1024
+	wsPoolSize = 4
 )
 
 var (
