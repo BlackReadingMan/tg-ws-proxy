@@ -48,7 +48,10 @@ func (p *wsPool) get(dc int, isMedia bool, targetIP string, domains []string) *w
 			continue
 		}
 		atomic.AddInt64(&stats.poolHits, 1)
-		log.Printf("WS pool hit for DC%d%s (age=%.1fs, left=%d)", dc, mediaSuffix(isMedia), age, len(bucket))
+		if debug {
+			log.Printf("WS pool hit for DC%d%s (age=%.1fs, left=%d)", dc, mediaSuffix(isMedia), age, len(bucket))
+		}
+
 		go p.refill(key, targetIP, domains)
 		return wc.conn
 	}
@@ -94,7 +97,9 @@ func (p *wsPool) refill(key [2]int, targetIP string, domains []string) {
 		}()
 	}
 	wg.Wait()
-	log.Printf("WS pool refilled DC%d%s: %d ready", dc, mediaSuffix(isMedia), len(p.idle[key]))
+	if debug {
+		log.Printf("WS pool refilled DC%d%s: %d ready", dc, mediaSuffix(isMedia), len(p.idle[key]))
+	}
 }
 
 func connectOne(targetIP string, domains []string, timeout time.Duration) (*websocket.Conn, error) {

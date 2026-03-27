@@ -36,7 +36,9 @@ func handleClient(conn net.Conn) {
 		return
 	}
 	if buf[0] != 5 {
-		log.Printf("[%s] not SOCKS5 (ver=%d)", label, buf[0])
+		if debug {
+			log.Printf("[%s] not SOCKS5 (ver=%d)", label, buf[0])
+		}
 		return
 	}
 	nmethods := int(buf[1])
@@ -100,7 +102,10 @@ func handleClient(conn net.Conn) {
 	// Non-Telegram IP -> direct passthrough
 	if !isTelegramIP(dstAddr) {
 		atomic.AddInt64(&stats.connectionsPassthrough, 1)
-		log.Printf("[%s] passthrough -> %s:%d", label, dstAddr, dstPort)
+		if debug {
+			log.Printf("[%s] passthrough -> %s:%d", label, dstAddr, dstPort)
+		}
+
 		remote, err := net.DialTimeout("tcp", net.JoinHostPort(dstAddr, strconv.Itoa(dstPort)), 10*time.Second)
 		if err != nil {
 			log.Printf("[%s] passthrough failed to %s: %v", label, dstAddr, err)
@@ -124,14 +129,18 @@ func handleClient(conn net.Conn) {
 
 	init := make([]byte, 64)
 	if _, err := io.ReadFull(conn, init); err != nil {
-		log.Printf("[%s] client disconnected before init", label)
+		if debug {
+			log.Printf("[%s] client disconnected before init", label)
+		}
 		return
 	}
 
 	// HTTP transport -> reject
 	if isHTTPTransport(init) {
 		atomic.AddInt64(&stats.connectionsHttpRejected, 1)
-		log.Printf("[%s] HTTP transport to %s:%d (rejected)", label, dstAddr, dstPort)
+		if debug {
+			log.Printf("[%s] HTTP transport to %s:%d (rejected)", label, dstAddr, dstPort)
+		}
 		return
 	}
 
@@ -147,8 +156,14 @@ func handleClient(conn net.Conn) {
 			}
 		}
 	}
-	if dc == 0 || dcOpt[dc] == "" {
-		log.Printf("[%s] unknown DC for %s:%d -> TCP passthrough", label, dstAddr, dstPort)
+	if dc == 0 {
+		log.Printf("[%s] unable to determine DC for %s:%d -> TCP passthrough", label, dstAddr, dstPort)
+		tcpFallback(context.Background(), conn, dstAddr, dstPort, init, label, 0, false)
+		return
+	}
+
+	if dcOpt[dc] == "" {
+		log.Printf("[%s] DC%d determined but no target IP configured (--dc-ip %d:IP) -> TCP passthrough", label, dc, dc)
 		tcpFallback(context.Background(), conn, dstAddr, dstPort, init, label, 0, false)
 		return
 	}
@@ -161,7 +176,10 @@ func handleClient(conn net.Conn) {
 	blacklisted := wsBlacklist.m[key]
 	wsBlacklist.RUnlock()
 	if blacklisted {
-		log.Printf("[%s] DC%d%s WS blacklisted -> TCP %s:%d", label, dc, mediaSuffix(isMedia), dstAddr, dstPort)
+		if debug {
+			log.Printf("[%s] DC%d%s WS blacklisted -> TCP %s:%d", label, dc, mediaSuffix(isMedia), dstAddr, dstPort)
+		}
+
 		if tcpFallback(context.Background(), conn, dstAddr, dstPort, init, label, dc, isMedia) {
 			log.Printf("[%s] DC%d%s TCP fallback closed", label, dc, mediaSuffix(isMedia))
 		}
@@ -175,7 +193,10 @@ func handleClient(conn net.Conn) {
 	dcFailUntil.RUnlock()
 	if exists && now.Before(failUntil) {
 		timeout = wsFailTimeout * time.Second
-		log.Printf("[%s] DC%d%s WS cooldown active, using timeout %.0fs", label, dc, mediaSuffix(isMedia), timeout.Seconds())
+		if debug {
+			log.Printf("[%s] DC%d%s WS cooldown active, using timeout %.0fs", label, dc, mediaSuffix(isMedia), timeout.Seconds())
+		}
+
 	}
 
 	// Try WebSocket

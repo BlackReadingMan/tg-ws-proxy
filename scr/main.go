@@ -13,11 +13,13 @@ import (
 
 func main() {
 	var (
-		port     = flag.Int("port", defaultPort, "listen port")
-		host     = flag.String("host", "127.0.0.1", "listen host")
-		dcIps    = flag.String("dc-ip", "", "comma-separated DC:IP pairs, e.g. 2:149.154.167.220,4:149.154.167.220")
-		bufKB    = flag.Int("buf-kb", 256, "socket send/recv buffer size in KB")
-		poolSize = flag.Int("pool-size", 4, "WS connection pool size per DC")
+		port       = flag.Int("port", defaultPort, "listen port")
+		host       = flag.String("host", "127.0.0.1", "listen host")
+		dcIps      = flag.String("dc-ip", "", "comma-separated DC:IP pairs, e.g. 2:149.154.167.220,4:149.154.167.220")
+		bufKB      = flag.Int("buf-kb", 256, "socket send/recv buffer size in KB")
+		poolSize   = flag.Int("pool-size", 4, "WS connection pool size per DC")
+		verbose    = flag.Bool("v", false, "verbose logging")
+		ipToDCFile = flag.String("ip-dc-file", "ip_to_dc.json", "path to JSON file with IP->DC mapping (optional)")
 	)
 	flag.Parse()
 
@@ -44,11 +46,23 @@ func main() {
 		dcOpt[dc] = parts[1]
 	}
 
-	log.SetFlags(log.Ltime | log.Lmicroseconds)
+	logLevel := "INFO"
+	if *verbose {
+		logLevel = "DEBUG"
+		debug = true
+	}
+	log.Printf("Log level: %s", logLevel)
+	log.SetFlags(log.Ltime)
 
 	recvBuf = *bufKB * 1024
 	sendBuf = recvBuf
 	wsPoolSize = *poolSize
+
+	if err := loadIPToDC(*ipToDCFile); err != nil {
+		log.Printf("Failed to load IP->DC mapping: %v", err)
+		initBuiltinIPToDC()
+	}
+	log.Printf("Loaded IP->DC mapping from %s (%d entries)", *ipToDCFile, len(ipToDC))
 
 	// start server
 	ln, err := net.Listen("tcp", net.JoinHostPort(*host, strconv.Itoa(*port)))
@@ -57,17 +71,17 @@ func main() {
 	}
 	defer ln.Close()
 
-	log.Printf("=" + strings.Repeat("=", 60))
+	log.Printf("%s", "="+strings.Repeat("=", 60))
 	log.Printf("  Telegram WS Bridge Proxy")
 	log.Printf("  Listening on   %s:%d", *host, *port)
 	log.Printf("  Target DC IPs:")
 	for dc, ip := range dcOpt {
 		log.Printf("    DC%d: %s", dc, ip)
 	}
-	log.Printf("=" + strings.Repeat("=", 60))
+	log.Printf("%s", "="+strings.Repeat("=", 60))
 	log.Printf("  Configure Telegram Desktop:")
 	log.Printf("    SOCKS5 proxy -> %s:%d  (no user/pass)", *host, *port)
-	log.Printf("=" + strings.Repeat("=", 60))
+	log.Printf("%s", "="+strings.Repeat("=", 60))
 
 	// warm up pool
 	for dc, ip := range dcOpt {

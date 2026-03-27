@@ -29,12 +29,18 @@ func pipe(ctx context.Context, dst io.Writer, src io.Reader) error {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
+			if debug {
+				log.Printf("pipe: read error: %v", err)
+			}
 			return err
 		}
 		if n == 0 {
 			return nil
 		}
 		if _, err := dst.Write(buf[:n]); err != nil {
+			if debug {
+				log.Printf("pipe: write error: %v", err)
+			}
 			return err
 		}
 	}
@@ -87,6 +93,9 @@ func bridgeWS(ctx context.Context, client net.Conn, ws *websocket.Conn, label st
 				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 					continue
 				}
+				if debug {
+					log.Printf("[%s] client read error: %v", label, err)
+				}
 				errChan <- err
 				return
 			}
@@ -100,12 +109,18 @@ func bridgeWS(ctx context.Context, client net.Conn, ws *websocket.Conn, label st
 				parts := splitter.Split(data)
 				for _, p := range parts {
 					if err := ws.WriteMessage(websocket.BinaryMessage, p); err != nil {
+						if debug {
+							log.Printf("[%s] ws write error: %v", label, err)
+						}
 						errChan <- err
 						return
 					}
 				}
 			} else {
 				if err := ws.WriteMessage(websocket.BinaryMessage, data); err != nil {
+					if debug {
+						log.Printf("[%s] ws write error: %v", label, err)
+					}
 					errChan <- err
 					return
 				}
@@ -124,11 +139,17 @@ func bridgeWS(ctx context.Context, client net.Conn, ws *websocket.Conn, label st
 			}
 			_, msg, err := ws.ReadMessage()
 			if err != nil {
+				if debug {
+					log.Printf("[%s] ws read error: %v", label, err)
+				}
 				errChan <- err
 				return
 			}
 			atomic.AddInt64(&stats.bytesDown, int64(len(msg)))
 			if _, err := client.Write(msg); err != nil {
+				if debug {
+					log.Printf("[%s] client write error: %v", label, err)
+				}
 				errChan <- err
 				return
 			}

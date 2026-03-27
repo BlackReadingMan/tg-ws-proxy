@@ -4,7 +4,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 )
@@ -59,6 +61,9 @@ func dcFromInit(data []byte) (dc int, isMedia bool, ok bool) {
 	dcRaw := int16(binary.LittleEndian.Uint16(plain[4:6]))
 	if proto == 0xEFEFEFEF || proto == 0xEEEEEEEE || proto == 0xDDDDDDDD {
 		dc := int(dcRaw)
+		if debug {
+			log.Printf("dc_from_init: proto=0x%08X dc_raw=%d plain=%s", proto, dcRaw, hex.EncodeToString(plain))
+		}
 		if dc < 0 {
 			dc = -dc
 			isMedia = true
@@ -86,6 +91,9 @@ func patchInitDc(data []byte, dc int) []byte {
 	copy(patched, data)
 	patched[60] = data[60] ^ keystream[60] ^ newDc[0]
 	patched[61] = data[61] ^ keystream[61] ^ newDc[1]
+	if debug {
+		log.Printf("init patched: dc_id -> %d", dc)
+	}
 	return patched
 }
 

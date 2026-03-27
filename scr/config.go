@@ -17,6 +17,7 @@ var (
 	recvBuf    = 256 * 1024
 	sendBuf    = 256 * 1024
 	wsPoolSize = 4
+	debug      = false
 )
 
 var (
@@ -24,35 +25,10 @@ var (
 	dcOpt map[int]string
 
 	// ipToDC maps known Telegram IPs to their DC and media flag
-	ipToDC = map[string]struct {
+	ipToDC = make(map[string]struct {
 		dc      int
 		isMedia bool
-	}{
-		"149.154.175.50": {1, false}, "149.154.175.51": {1, false},
-		"149.154.175.53": {1, false}, "149.154.175.54": {1, false},
-		"149.154.175.211": {1, false},
-		"149.154.175.52":  {1, true},
-		"149.154.167.35":  {2, false},
-		"149.154.167.41":  {2, false}, "149.154.167.50": {2, false},
-		"149.154.167.51": {2, false}, "149.154.167.220": {2, false},
-		"95.161.76.100":   {2, false},
-		"149.154.167.151": {2, true}, "149.154.167.222": {2, true},
-		"149.154.167.223": {2, true}, "149.154.167.255": {4, false},
-		"149.154.162.123": {2, true},
-		"149.154.175.100": {3, false}, "149.154.175.101": {3, false},
-		"149.154.175.102": {3, true},
-		"149.154.167.91":  {4, false}, "149.154.167.92": {4, false},
-		"149.154.164.250": {4, true}, "149.154.166.120": {4, true},
-		"149.154.166.121": {4, true}, "149.154.167.118": {4, true},
-		"149.154.165.111": {4, true},
-		"91.108.56.100":   {5, false}, "91.108.56.101": {5, false},
-		"91.108.56.116": {5, false}, "91.108.56.126": {5, false},
-		"149.154.171.5":   {5, false},
-		"149.154.171.255": {5, false},
-		"91.108.56.102":   {5, true}, "91.108.56.128": {5, true},
-		"91.108.56.151":  {5, true},
-		"91.105.192.100": {203, false},
-	}
+	})
 
 	// dcOverrides maps non‑standard DC numbers (e.g., 203) to actual DCs
 	dcOverrides = map[int]int{
