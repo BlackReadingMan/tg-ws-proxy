@@ -6,11 +6,14 @@ import (
 )
 
 const (
-	defaultPort    = 1080
-	tcpNoDelay     = true
-	wsPoolMaxAge   = 120.0 // seconds
-	dcFailCooldown = 30.0  // seconds
-	wsFailTimeout  = 2.0   // seconds
+	defaultPort                      = 1080
+	tcpNoDelay                       = true
+	wsPoolMaxAge                     = 120.0 // seconds
+	dcFailCooldown                   = 30.0  // seconds
+	wsFailTimeout                    = 2.0   // seconds
+	PROTO_ABRIDGED            uint32 = 0xEFEFEFEF
+	PROTO_INTERMEDIATE        uint32 = 0xEEEEEEEE
+	PROTO_PADDED_INTERMEDIATE uint32 = 0xDDDDDDDD
 )
 
 var (

@@ -40,39 +40,44 @@ func isHTTPTransport(data []byte) bool {
 		strings.HasPrefix(string(data), "OPTIONS ")
 }
 
-func dcFromInit(data []byte) (dc int, isMedia bool, ok bool) {
+func dcFromInit(data []byte) (dc int, isMedia bool, proto uint32, ok bool) {
 	if len(data) < 64 {
-		return 0, false, false
+		return 0, false, 0, false
 	}
 	key := data[8:40]
 	iv := data[40:56]
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return 0, false, false
+		return 0, false, 0, false
 	}
 	stream := cipher.NewCTR(block, iv)
 	keystream := make([]byte, 64)
-	stream.XORKeyStream(keystream, make([]byte, 64)) // encrypt zeros
+	stream.XORKeyStream(keystream, make([]byte, 64))
+
 	plain := make([]byte, 8)
 	for i := 0; i < 8; i++ {
 		plain[i] = data[56+i] ^ keystream[56+i]
 	}
-	proto := binary.LittleEndian.Uint32(plain[0:4])
+	proto = binary.LittleEndian.Uint32(plain[0:4])
 	dcRaw := int16(binary.LittleEndian.Uint16(plain[4:6]))
-	if proto == 0xEFEFEFEF || proto == 0xEEEEEEEE || proto == 0xDDDDDDDD {
-		dc := int(dcRaw)
-		if debug {
-			log.Printf("dc_from_init: proto=0x%08X dc_raw=%d plain=%s", proto, dcRaw, hex.EncodeToString(plain))
-		}
-		if dc < 0 {
-			dc = -dc
+
+	if debug {
+		log.Printf("dc_from_init: proto=0x%08X dc_raw=%d plain=%s", proto, dcRaw, hex.EncodeToString(plain))
+	}
+
+	if proto == PROTO_ABRIDGED || proto == PROTO_INTERMEDIATE || proto == PROTO_PADDED_INTERMEDIATE {
+		dcVal := int(dcRaw)
+		if dcVal < 0 {
+			dcVal = -dcVal
 			isMedia = true
 		}
-		if (dc >= 1 && dc <= 5) || dc == 203 {
-			return dc, isMedia, true
+		if (dcVal >= 1 && dcVal <= 5) || dcVal == 203 {
+			return dcVal, isMedia, proto, true
 		}
+
+		return 0, false, proto, false
 	}
-	return 0, false, false
+	return 0, false, 0, false
 }
 
 func patchInitDc(data []byte, dc int) []byte {

@@ -145,13 +145,17 @@ func handleClient(conn net.Conn) {
 	}
 
 	// Extract DC
-	dc, isMedia, ok := dcFromInit(init)
+	dc, isMedia, proto, ok := dcFromInit(init)
 	patched := false
 	if !ok {
 		if info, exists := ipToDC[dstAddr]; exists {
 			dc, isMedia = info.dc, info.isMedia
 			if targetIP, ok := dcOpt[dc]; ok && targetIP != "" {
-				init = patchInitDc(init, dc)
+				if isMedia {
+					init = patchInitDc(init, -dc)
+				} else {
+					init = patchInitDc(init, dc)
+				}
 				patched = true
 			}
 		}
@@ -227,9 +231,15 @@ func handleClient(conn net.Conn) {
 	dcFailUntil.Unlock()
 	atomic.AddInt64(&stats.connectionsWs, 1)
 
-	var splitter *MsgSplitter
-	if patched {
-		splitter, _ = NewMsgSplitter(init)
+	splitter := (*MsgSplitter)(nil)
+	if proto != 0 && (patched || isMedia || proto != PROTO_INTERMEDIATE) {
+		s, err := NewMsgSplitter(init, proto)
+		if err == nil {
+			splitter = s
+			if debug {
+				log.Printf("[%s] MsgSplitter activated for proto 0x%08X", label, proto)
+			}
+		}
 	}
 	// send init
 	if err := wsConn.WriteMessage(websocket.BinaryMessage, init); err != nil {

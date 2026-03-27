@@ -79,6 +79,18 @@ func bridgeWS(ctx context.Context, client net.Conn, ws *websocket.Conn, label st
 
 	// client -> ws
 	go func() {
+		defer func() {
+			if splitter != nil {
+				tail := splitter.Flush()
+				if len(tail) > 0 {
+					if err := ws.WriteMessage(websocket.BinaryMessage, tail[0]); err != nil {
+						if debug {
+							log.Printf("[%s] ws write error on flush: %v", label, err)
+						}
+					}
+				}
+			}
+		}()
 		buf := make([]byte, 32*1024)
 		for {
 			select {
